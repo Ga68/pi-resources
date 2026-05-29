@@ -16,8 +16,12 @@ Then reload pi:
 
 ## Included skills
 
-- `commit` - Create scoped, safe git commits with optional `.agents/commits/` rationale files.
 - `web-search` - Search the web and fetch page text for current/external information.
+
+## Included extensions
+
+- `commit` - Provides `/commit` for side-channel git commits with optional free-text instructions.
+- `minimal-footer` - Replaces the default footer with a compact single-line layout.
 
 ## Picking specific resources
 
@@ -30,9 +34,9 @@ To pick specific resources, use package filtering in `~/.pi/agent/settings.json`
   "packages": [
     {
       "source": "/Users/mosius/.pi/user-resources/mosius",
-      "skills": ["skills/commit/SKILL.md"],
+      "skills": ["skills/web-search/SKILL.md"],
       "prompts": [],
-      "extensions": [],
+      "extensions": ["extensions/commit.ts"],
       "themes": []
     }
   ]
