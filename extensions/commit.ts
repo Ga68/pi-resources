@@ -67,12 +67,24 @@ function compactProgress(text: string): string {
 	return line.length > 120 ? `${line.slice(0, 117)}...` : line;
 }
 
-function progressFromTool(name: string, args: Record<string, unknown>): string {
-	if (name === "bash") return `running: ${compactProgress(String(args.command ?? "bash"))}`;
-	if (name === "read") return `reading: ${String(args.path ?? "file")}`;
-	if (name === "write") return `writing: ${String(args.path ?? "file")}`;
-	if (name === "edit") return `editing: ${String(args.path ?? "file")}`;
-	return `${name}...`;
+function humanBashProgress(command: string): string | undefined {
+	if (/git\s+status/.test(command)) return "inspecting working tree";
+	if (/git\s+diff/.test(command)) return "reviewing changes";
+	if (/git\s+add/.test(command)) return "staging selected changes";
+	if (/git\s+commit/.test(command)) return "creating commit";
+	if (/git\s+push/.test(command)) return "pushing commit";
+	if (/git\s+rev-parse/.test(command)) return "locating repository";
+	if (/git\s+branch|git\s+remote/.test(command)) return "checking repository metadata";
+	if (/mkdir|cat\s+>|tee\s+|printf/.test(command)) return "writing rationale";
+	return undefined;
+}
+
+function progressFromTool(name: string, args: Record<string, unknown>): string | undefined {
+	if (name === "bash") return humanBashProgress(String(args.command ?? ""));
+	if (name === "read") return "reading relevant context";
+	if (name === "write") return "writing rationale";
+	if (name === "edit") return "updating rationale";
+	return undefined;
 }
 
 async function runPiProcess(
@@ -98,9 +110,10 @@ async function runPiProcess(
 			}
 
 			if (event.type === "agent_start") onProgress("thinking about commit scope");
-			else if (event.type === "tool_execution_start") onProgress(progressFromTool(event.toolName, event.args ?? {}));
-			else if (event.type === "tool_execution_end") onProgress(`finished ${event.toolName}`);
-			else if (event.type === "message_update") {
+			else if (event.type === "tool_execution_start") {
+				const progress = progressFromTool(event.toolName, event.args ?? {});
+				if (progress) onProgress(progress);
+			} else if (event.type === "message_update") {
 				const delta = event.assistantMessageEvent?.delta;
 				if (typeof delta === "string") {
 					for (const match of delta.matchAll(/PROGRESS:\s*([^\n]+)/g)) onProgress(match[1]!);
