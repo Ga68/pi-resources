@@ -5,6 +5,7 @@
   "description": "Personal pi package for global skills, prompts, extensions, and themes.",
   "keywords": ["pi-package"],
   "pi": {
-    "skills": ["./skills"]
+    "skills": ["./skills"],
+    "extensions": ["./extensions"]
   }
 }
