@@ -5,7 +5,7 @@ Personal [pi](https://pi.dev) package for globally shared skills, prompts, exten
 ## Install globally
 
 ```bash
-pi install /Users/mosius/projects/my_first_pi
+pi install /Users/mosius/.pi/user-resources/mosius
 ```
 
 Then reload pi:
@@ -29,7 +29,7 @@ To pick specific resources, use package filtering in `~/.pi/agent/settings.json`
 {
   "packages": [
     {
-      "source": "/Users/mosius/projects/my_first_pi",
+      "source": "/Users/mosius/.pi/user-resources/mosius",
       "skills": ["skills/commit/SKILL.md"],
       "prompts": [],
       "extensions": [],
