@@ -269,21 +269,24 @@ export default function (pi: ExtensionAPI) {
 			let result = await runSideAgent(pi, ctx, instructions, setProgress);
 
 			while (result.status === "needs_clarification") {
-				const answer = await ctx.ui.editor(
-					"Commit clarification needed",
+				ctx.ui.setStatus("commit", ctx.ui.theme.fg("dim", "commit: waiting for clarification"));
+				ctx.ui.setWidget(
+					"commit-progress",
 					[
-						...(clarification ? [`Previous clarification:\n${clarification}`, ""] : []),
-						...(result.reason ? [result.reason, ""] : []),
-						...result.questions.map((q) => `Q: ${q}\nA: `),
-					].join("\n"),
+						ctx.ui.theme.fg("warning", "Commit clarification needed"),
+						...(result.reason ? [ctx.ui.theme.fg("dim", result.reason)] : []),
+						...result.questions.map((q) => `${ctx.ui.theme.fg("accent", "?")} ${q}`),
+					],
+					{ placement: "belowEditor" },
 				);
+				const answer = await ctx.ui.input("Answer commit clarification", "Type your answer and press Enter");
 				if (!answer?.trim()) {
 					clearProgress();
 					ctx.ui.notify("Commit cancelled", "warning");
 					return;
 				}
 				clarification = clarification ? `${clarification}\n\n${answer}` : answer;
-				ctx.ui.notify("Restarting side-channel commit agent with clarification...", "info");
+				ctx.ui.notify("Restarting commit agent with clarification...", "info");
 				setProgress("restarting with clarification");
 				result = await runSideAgent(pi, ctx, instructions, setProgress, clarification);
 			}
