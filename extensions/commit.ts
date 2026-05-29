@@ -233,53 +233,79 @@ Use that file as the source of intent and context. It may be large: do not load 
 }
 
 export default function (pi: ExtensionAPI) {
+	let running = false;
+
+	async function runCommitFlow(instructions: string, ctx: ExtensionCommandContext) {
+		try {
+			ctx.ui.notify("Starting side-channel commit agent...", "info");
+			let clarification: string | undefined;
+			const clearProgress = () => {
+				ctx.ui.setStatus("commit", undefined);
+				ctx.ui.setWidget("commit-progress", undefined);
+			};
+			const setProgress = (text: string) => {
+				const line = `commit: ${text}`;
+				ctx.ui.setStatus("commit", ctx.ui.theme.fg("dim", line));
+				ctx.ui.setWidget(
+					"commit-progress",
+					[ctx.ui.theme.fg("accent", "▸ ") + ctx.ui.theme.fg("dim", line)],
+					{ placement: "belowEditor" },
+				);
+			};
+			setProgress("starting side agent");
+			let result = await runSideAgent(pi, ctx, instructions, setProgress);
+
+			while (result.status === "needs_clarification") {
+				const answer = await ctx.ui.editor(
+					"Commit clarification needed",
+					[
+						...(clarification ? [`Previous clarification:\n${clarification}`, ""] : []),
+						...(result.reason ? [result.reason, ""] : []),
+						...result.questions.map((q) => `Q: ${q}\nA: `),
+					].join("\n"),
+				);
+				if (!answer?.trim()) {
+					clearProgress();
+					ctx.ui.notify("Commit cancelled", "warning");
+					return;
+				}
+				clarification = clarification ? `${clarification}\n\n${answer}` : answer;
+				ctx.ui.notify("Restarting side-channel commit agent with clarification...", "info");
+				setProgress("restarting with clarification");
+				result = await runSideAgent(pi, ctx, instructions, setProgress, clarification);
+			}
+
+			clearProgress();
+			if (result.status === "committed") {
+				ctx.ui.notify(
+					`Committed \"${result.subject}\" in ${result.repo}${result.pushed ? " and pushed" : ""}.${
+						result.rationalePath ? ` Rationale: ${result.rationalePath}.` : ""
+					}`,
+					"info",
+				);
+				return;
+			}
+
+			ctx.ui.notify(`Commit failed: ${result.reason}`, "error");
+		} catch (error) {
+			ctx.ui.setStatus("commit", undefined);
+			ctx.ui.setWidget("commit-progress", undefined);
+			ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+		} finally {
+			running = false;
+		}
+	}
+
 	pi.registerCommand("commit", {
 		description: "Run a side-channel commit agent with optional free-text instructions",
 		handler: async (args, ctx) => {
-			const instructions = args.trim();
-			try {
-				ctx.ui.notify("Starting side-channel commit agent...", "info");
-				let clarification: string | undefined;
-				const setProgress = (text: string) => ctx.ui.setStatus("commit", ctx.ui.theme.fg("dim", `commit: ${text}`));
-				setProgress("starting side agent");
-				let result = await runSideAgent(pi, ctx, instructions, setProgress);
-
-				while (result.status === "needs_clarification") {
-					const answer = await ctx.ui.editor(
-						"Commit clarification needed",
-						[
-							...(clarification ? [`Previous clarification:\n${clarification}`, ""] : []),
-							...(result.reason ? [result.reason, ""] : []),
-							...result.questions.map((q) => `Q: ${q}\nA: `),
-						].join("\n"),
-					);
-					if (!answer?.trim()) {
-						ctx.ui.setStatus("commit", undefined);
-						ctx.ui.notify("Commit cancelled", "warning");
-						return;
-					}
-					clarification = clarification ? `${clarification}\n\n${answer}` : answer;
-					ctx.ui.notify("Restarting side-channel commit agent with clarification...", "info");
-					setProgress("restarting with clarification");
-					result = await runSideAgent(pi, ctx, instructions, setProgress, clarification);
-				}
-
-				ctx.ui.setStatus("commit", undefined);
-				if (result.status === "committed") {
-					ctx.ui.notify(
-						`Committed \"${result.subject}\" in ${result.repo}${result.pushed ? " and pushed" : ""}.${
-							result.rationalePath ? ` Rationale: ${result.rationalePath}.` : ""
-						}`,
-						"info",
-					);
-					return;
-				}
-
-				ctx.ui.notify(`Commit failed: ${result.reason}`, "error");
-			} catch (error) {
-				ctx.ui.setStatus("commit", undefined);
-				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+			if (running) {
+				ctx.ui.notify("Commit agent is already running", "warning");
+				return;
 			}
+			running = true;
+			void runCommitFlow(args.trim(), ctx);
+			return;
 		},
 	});
 }
