@@ -1,0 +1,21 @@
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Local dependencies and generated environments
+node_modules/
+.venv/
+skills/**/.venv/
+
+# Local secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+secrets.*
+credentials.*
