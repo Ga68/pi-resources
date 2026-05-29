@@ -63,12 +63,16 @@ function branchJson(ctx: ExtensionCommandContext): string {
 }
 
 function compactProgress(text: string): string {
-	const lines = text
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
-	const line = lines.at(-1) ?? "working";
+	const line = text.trim().split("\n").filter(Boolean).at(-1) ?? "working";
 	return line.length > 120 ? `${line.slice(0, 117)}...` : line;
+}
+
+function progressFromTool(name: string, args: Record<string, unknown>): string {
+	if (name === "bash") return `running: ${compactProgress(String(args.command ?? "bash"))}`;
+	if (name === "read") return `reading: ${String(args.path ?? "file")}`;
+	if (name === "write") return `writing: ${String(args.path ?? "file")}`;
+	if (name === "edit") return `editing: ${String(args.path ?? "file")}`;
+	return `${name}...`;
 }
 
 async function runPiProcess(
@@ -78,26 +82,57 @@ async function runPiProcess(
 ): Promise<{ code: number | null; output: string }> {
 	return new Promise((resolve) => {
 		const child = spawn("pi", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-		let output = "";
-		let progressBuffer = "";
-		let lastProgress = 0;
+		let rawOutput = "";
+		let finalAssistantText = "";
+		let lineBuffer = "";
 
-		const onData = (chunk: Buffer) => {
-			const text = chunk.toString();
-			output += text;
-			progressBuffer += text;
-			const now = Date.now();
-			if (now - lastProgress > 750) {
-				lastProgress = now;
-				onProgress(compactProgress(progressBuffer));
-				progressBuffer = "";
+		const handleJsonLine = (line: string) => {
+			if (!line.trim()) return;
+			rawOutput += `${line}\n`;
+			let event: any;
+			try {
+				event = JSON.parse(line);
+			} catch {
+				onProgress(compactProgress(line));
+				return;
+			}
+
+			if (event.type === "agent_start") onProgress("thinking about commit scope");
+			else if (event.type === "tool_execution_start") onProgress(progressFromTool(event.toolName, event.args ?? {}));
+			else if (event.type === "tool_execution_end") onProgress(`finished ${event.toolName}`);
+			else if (event.type === "message_update") {
+				const delta = event.assistantMessageEvent?.delta;
+				if (typeof delta === "string") {
+					for (const match of delta.matchAll(/PROGRESS:\s*([^\n]+)/g)) onProgress(match[1]!);
+				}
+			} else if (event.type === "message_end" && event.message?.role === "assistant") {
+				finalAssistantText = (event.message.content ?? [])
+					.filter((part: any) => part?.type === "text" && typeof part.text === "string")
+					.map((part: any) => part.text)
+					.join("\n")
+					.trim();
 			}
 		};
 
-		child.stdout.on("data", onData);
-		child.stderr.on("data", onData);
+		child.stdout.on("data", (chunk: Buffer) => {
+			lineBuffer += chunk.toString();
+			let newlineIndex: number;
+			while ((newlineIndex = lineBuffer.indexOf("\n")) !== -1) {
+				const line = lineBuffer.slice(0, newlineIndex);
+				lineBuffer = lineBuffer.slice(newlineIndex + 1);
+				handleJsonLine(line);
+			}
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			const text = chunk.toString();
+			rawOutput += text;
+			onProgress(compactProgress(text));
+		});
 		child.on("error", (error) => resolve({ code: 1, output: error.message }));
-		child.on("close", (code) => resolve({ code, output: output.trim() }));
+		child.on("close", (code) => {
+			if (lineBuffer.trim()) handleJsonLine(lineBuffer);
+			resolve({ code, output: finalAssistantText || rawOutput.trim() });
+		});
 	});
 }
 
@@ -132,6 +167,15 @@ Configured local pi package/resource paths that may also contain relevant work:
 ${packagePaths.length > 0 ? packagePaths.map((p) => `- ${p}`).join("\n") : "(none)"}
 
 Required workflow:
+Before each major phase, emit a short line beginning with PROGRESS:, for example:
+PROGRESS: inspecting repositories
+PROGRESS: reading conversation branch
+PROGRESS: checking diffs
+PROGRESS: writing rationale
+PROGRESS: staging changes
+PROGRESS: committing
+PROGRESS: pushing
+
 1. Infer the repository and commit scope from the full conversation branch and the working trees you inspect.
 2. If the repository/scope is ambiguous or risky, stop and return a JSON needs_clarification result. Do not guess across unrelated repos.
 3. Inspect git status and diffs internally. Do not push unless the user instructions explicitly request push.
@@ -141,7 +185,7 @@ Required workflow:
 7. If a rationale file is created, make the commit body end with exactly: For more details, see .agents/commits/<filename>.md.
 8. Commit with a concise imperative subject.
 9. Optionally push only if explicitly requested.
-10. Return ONLY one JSON object, with no markdown fence and no extra text.
+10. After progress lines and work are complete, return one final JSON object, with no markdown fence.
 
 JSON result schemas:
 
@@ -178,7 +222,7 @@ Use that file as the source of intent and context. It may be large: do not load 
 		await writeFile(promptPath, prompt, "utf8");
 		const result = await runPiProcess(
 			ctx.cwd,
-			["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "-p", `@${promptPath}`],
+			["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "--mode", "json", `@${promptPath}`],
 			onProgress,
 		);
 		if (result.code !== 0) return { status: "failed", reason: result.output || "Commit side agent failed" };
