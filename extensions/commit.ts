@@ -250,7 +250,7 @@ export default function (pi: ExtensionAPI) {
 
 	async function runCommitFlow(instructions: string, ctx: ExtensionCommandContext) {
 		try {
-			ctx.ui.notify("Starting side-channel commit agent...", "info");
+			ctx.ui.notify("Running commit agent...", "info");
 			let clarification: string | undefined;
 			const clearProgress = () => {
 				ctx.ui.setStatus("commit", undefined);
@@ -290,12 +290,24 @@ export default function (pi: ExtensionAPI) {
 
 			clearProgress();
 			if (result.status === "committed") {
+				const message = `Committed \"${result.subject}\"${result.pushed ? " and pushed" : ""}.`;
 				ctx.ui.notify(
 					`Committed \"${result.subject}\" in ${result.repo}${result.pushed ? " and pushed" : ""}.${
 						result.rationalePath ? ` Rationale: ${result.rationalePath}.` : ""
 					}`,
 					"info",
 				);
+				pi.sendMessage({
+					customType: "commit",
+					content: message,
+					display: true,
+					details: {
+						subject: result.subject,
+						repo: result.repo,
+						pushed: result.pushed,
+						rationalePath: result.rationalePath,
+					},
+				}, { deliverAs: "nextTurn" });
 				return;
 			}
 
