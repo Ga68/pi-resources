@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -61,10 +62,50 @@ function branchJson(ctx: ExtensionCommandContext): string {
 	return JSON.stringify(ctx.sessionManager.getBranch(), null, 2);
 }
 
+function compactProgress(text: string): string {
+	const lines = text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	const line = lines.at(-1) ?? "working";
+	return line.length > 120 ? `${line.slice(0, 117)}...` : line;
+}
+
+async function runPiProcess(
+	cwd: string,
+	args: string[],
+	onProgress: (text: string) => void,
+): Promise<{ code: number | null; output: string }> {
+	return new Promise((resolve) => {
+		const child = spawn("pi", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+		let output = "";
+		let progressBuffer = "";
+		let lastProgress = 0;
+
+		const onData = (chunk: Buffer) => {
+			const text = chunk.toString();
+			output += text;
+			progressBuffer += text;
+			const now = Date.now();
+			if (now - lastProgress > 750) {
+				lastProgress = now;
+				onProgress(compactProgress(progressBuffer));
+				progressBuffer = "";
+			}
+		};
+
+		child.stdout.on("data", onData);
+		child.stderr.on("data", onData);
+		child.on("error", (error) => resolve({ code: 1, output: error.message }));
+		child.on("close", (code) => resolve({ code, output: output.trim() }));
+	});
+}
+
 async function runSideAgent(
-	pi: ExtensionAPI,
+	_ctxPi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	instructions: string,
+	onProgress: (text: string) => void,
 	clarification?: string,
 ): Promise<SideAgentResult> {
 	const tempDir = await mkdtemp(join(tmpdir(), "pi-commit-agent-"));
@@ -135,14 +176,13 @@ Use that file as the source of intent and context. It may be large: do not load 
 
 	try {
 		await writeFile(promptPath, prompt, "utf8");
-		const result = await pi.exec(
-			"pi",
+		const result = await runPiProcess(
+			ctx.cwd,
 			["--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates", "-p", `@${promptPath}`],
-			{ cwd: ctx.cwd, timeout: 10 * 60 * 1000 },
+			onProgress,
 		);
-		const output = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
-		if (result.code !== 0) return { status: "failed", reason: output || "Commit side agent failed" };
-		return parseJsonResult(output);
+		if (result.code !== 0) return { status: "failed", reason: result.output || "Commit side agent failed" };
+		return parseJsonResult(result.output);
 	} finally {
 		await rm(tempDir, { recursive: true, force: true });
 	}
@@ -156,7 +196,9 @@ export default function (pi: ExtensionAPI) {
 			try {
 				ctx.ui.notify("Starting side-channel commit agent...", "info");
 				let clarification: string | undefined;
-				let result = await runSideAgent(pi, ctx, instructions);
+				const setProgress = (text: string) => ctx.ui.setStatus("commit", ctx.ui.theme.fg("dim", `commit: ${text}`));
+				setProgress("starting side agent");
+				let result = await runSideAgent(pi, ctx, instructions, setProgress);
 
 				while (result.status === "needs_clarification") {
 					const answer = await ctx.ui.editor(
@@ -168,14 +210,17 @@ export default function (pi: ExtensionAPI) {
 						].join("\n"),
 					);
 					if (!answer?.trim()) {
+						ctx.ui.setStatus("commit", undefined);
 						ctx.ui.notify("Commit cancelled", "warning");
 						return;
 					}
 					clarification = clarification ? `${clarification}\n\n${answer}` : answer;
 					ctx.ui.notify("Restarting side-channel commit agent with clarification...", "info");
-					result = await runSideAgent(pi, ctx, instructions, clarification);
+					setProgress("restarting with clarification");
+					result = await runSideAgent(pi, ctx, instructions, setProgress, clarification);
 				}
 
+				ctx.ui.setStatus("commit", undefined);
 				if (result.status === "committed") {
 					ctx.ui.notify(
 						`Committed \"${result.subject}\" in ${result.repo}${result.pushed ? " and pushed" : ""}.${
@@ -188,6 +233,7 @@ export default function (pi: ExtensionAPI) {
 
 				ctx.ui.notify(`Commit failed: ${result.reason}`, "error");
 			} catch (error) {
+				ctx.ui.setStatus("commit", undefined);
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			}
 		},
