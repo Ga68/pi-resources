@@ -8,7 +8,8 @@
     "skills": ["./skills"],
     "extensions": [
       "./extensions/exit.ts",
-      "./extensions/minimal-footer.ts"
+      "./extensions/minimal-footer.ts",
+      "./extensions/trash-delete-policy.ts"
     ]
   }
 }

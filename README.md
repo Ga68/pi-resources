@@ -22,6 +22,7 @@ Then reload pi:
 ## Included extensions
 
 - `minimal-footer` - Replaces the default footer with a compact single-line layout.
+- `trash-delete-policy` - Tells the agent to use `trash` instead of permanent delete commands, and blocks agent-initiated violations.
 
 ## Picking specific resources
 
