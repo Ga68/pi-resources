@@ -8,6 +8,7 @@
     "skills": ["./skills"],
     "extensions": [
       "./extensions/commit/index.ts",
+      "./extensions/commit-tree.ts",
       "./extensions/exit.ts",
       "./extensions/minimal-footer.ts"
     ]
