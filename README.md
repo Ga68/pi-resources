@@ -36,7 +36,7 @@ To pick specific resources, use package filtering in `~/.pi/agent/settings.json`
       "source": "/Users/mosius/.pi/user-resources/mosius",
       "skills": ["skills/web-search/SKILL.md"],
       "prompts": [],
-      "extensions": ["extensions/commit.ts"],
+      "extensions": ["extensions/commit/index.ts"],
       "themes": []
     }
   ]

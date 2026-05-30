@@ -6,6 +6,10 @@
   "keywords": ["pi-package"],
   "pi": {
     "skills": ["./skills"],
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions/commit/index.ts",
+      "./extensions/exit.ts",
+      "./extensions/minimal-footer.ts"
+    ]
   }
 }
