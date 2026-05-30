@@ -21,6 +21,7 @@ Then reload pi:
 
 ## Included extensions
 
+- `exit` - Adds `/exit` as a shutdown alias.
 - `minimal-footer` - Replaces the default footer with a compact single-line layout.
 - `trash-delete-policy` - Tells the agent to use `trash` instead of permanent delete commands, and blocks agent-initiated violations.
 
