@@ -21,6 +21,7 @@ Then reload pi:
 ## Included extensions
 
 - `commit` - Provides `/commit` for side-channel git commits with optional free-text instructions.
+- `exit` - Adds `/exit` as a shutdown alias.
 - `minimal-footer` - Replaces the default footer with a compact single-line layout.
 
 ## Picking specific resources
